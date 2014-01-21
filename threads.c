@@ -10,12 +10,12 @@ int threadCount = 0;
 ucontext_t threads[10];
 char stacks[10][18000];
 ucontext_t main_context1, main_context2;
-int time1 = 1; // First thread call interval
+int time1 = 4; // First thread call interval
 int time2 = 2; // Second thread call interval
 
 void onalarm(nsig) {
         alarmed = 1;
-        alarm(time1);
+        alarm(1);
 }
 
 void print1(ucontext_t *context1, ucontext_t *context2) {
@@ -56,8 +56,8 @@ int main(void) {
                 if (alarmed) {
                         alarmed = 0;
 			turn++;
+			if (turn%time1 == 0) swapcontext(&main_context2, &threads[0]);
 			if (turn%time2 == 0) swapcontext(&main_context2, &threads[1]);
-			swapcontext(&main_context2, &threads[0]);
                 }
         }
         return 0;
