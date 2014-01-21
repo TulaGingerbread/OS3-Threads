@@ -1,62 +1,64 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <ucontext.h>
+#include <string.h>
 #include <signal.h>
+#include <ucontext.h>
+#include <sys/time.h>
+ 
+int alarmed = 0;
 
-const int time_one = 1;
-const int time_two = 2;
-int i_one = 0;
-int i_two = 0;
-int k = 0;
-
-ucontext_t context_one, context_two;
-
-void switch_to_two(int sig);
-
-void switch_to_one(int sig) {
-    signal(SIGALRM, switch_to_two);
-    alarm(time_one);
-    swapcontext(&context_two, &context_one);
+void onalarm(nsig) {
+        alarmed = 1;
+        alarm(1);
 }
 
-void switch_to_two(int sig) {
-    signal(SIGALRM, switch_to_one);
-    alarm(time_two);
-    swapcontext(&context_one, &context_two);
+void print1(ucontext_t *context1, ucontext_t *context2) {
+        while (1) {
+                printf("Thread #1\n");
+                swapcontext(context1, context2);
+        }
 }
 
-void thread_one(void) {
-	while (1) {
-		if (k == 0) {
-			printf("One: %d\n", i_one);
-			k=1;
-		}
-		i_one++;
-    }
+void print2(ucontext_t *context1, ucontext_t *context2) {
+        while (1) {
+                printf("Thread #2\n");
+                swapcontext(context1, context2);
+        }
 }
 
-void thread_two(void) {
-	while (1) {
-		if (k == 1) {
-			printf("Two: %d\n", i_two);
-			k=0;
-		}
-		i_two++;
-    }
+int threadCount = 0;
+ucontext_t threads[10];
+char stacks[10][18000];
+
+void addThread(void (*func)(ucontext_t*,ucontext_t*), ucontext_t *back, ucontext_t *finish) {
+        threads[threadCount].uc_link = finish;
+        threads[threadCount].uc_stack.ss_sp = stacks[threadCount];
+        threads[threadCount].uc_stack.ss_size = sizeof(stacks[threadCount]);
+        getcontext(&threads[threadCount]);
+        makecontext(&threads[threadCount], (void (*)(void)) func, 2, &threads[threadCount], back);
+        threadCount++;
 }
 
-void init_thread_context(ucontext_t *context, void (*thread_func)(void)) {
-    getcontext(context);
-    context->uc_stack.ss_sp = malloc(SIGSTKSZ);
-    context->uc_stack.ss_size = SIGSTKSZ;
-    makecontext(context, thread_func, 0);
-}
+ucontext_t main_context1, main_context2;
 
 int main(void) {
-    init_thread_context(&context_one, thread_one);
-    init_thread_context(&context_two, thread_two);
-    signal(SIGALRM, switch_to_two);
-    alarm(time_one);
-    setcontext(&context_one);
-    return EXIT_SUCCESS;
+        signal(SIGALRM, onalarm);
+        alarm(1);
+        
+        addThread(print1, &main_context2, &main_context1);
+        addThread(print2, &main_context2, &main_context1);
+        
+        getcontext(&main_context1);
+        
+        int turn = 0;
+        
+        while (1) {
+                if (alarmed) {
+                        alarmed = 0;
+			turn++;
+			if (turn%2 == 0) swapcontext(&main_context2, &threads[1]);
+			swapcontext(&main_context2, &threads[0]);
+                }
+        }
+        return 0;
 }
